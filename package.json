@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "license": "MIT",
   "scripts": {
+    "lint:affected": "npx nx affected -t lint",
     "prepare": "husky install"
   },
   "private": true,
