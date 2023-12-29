@@ -4,8 +4,9 @@
   "license": "MIT",
   "scripts": {},
   "private": true,
-  "dependencies": {},
   "devDependencies": {
+    "@commitlint/cli": "^18.4.3",
+    "@commitlint/config-conventional": "^18.4.3",
     "@nx/js": "17.2.8",
     "@nx/workspace": "17.2.8",
     "nx": "17.2.8"
