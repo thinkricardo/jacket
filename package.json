@@ -4,6 +4,7 @@
   "license": "MIT",
   "scripts": {
     "lint:affected": "npx nx affected -t lint",
+    "test:affected": "npx nx affected -t test",
     "prepare": "husky install"
   },
   "private": true,
