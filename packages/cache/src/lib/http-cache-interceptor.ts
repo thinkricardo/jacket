@@ -21,7 +21,7 @@ export class HttpCacheInterceptor implements HttpInterceptor {
       return next.handle(request);
     }
 
-    const cacheResponse = this.cache.get(request.url);
+    const cacheResponse = this.get(request.url);
     if (cacheResponse) {
       return of(cacheResponse);
     }
@@ -29,9 +29,17 @@ export class HttpCacheInterceptor implements HttpInterceptor {
     return next.handle(request).pipe(
       tap((event) => {
         if (event instanceof HttpResponse) {
-          this.cache.set(request.url, event);
+          this.save(request.url, event);
         }
       })
     );
+  }
+
+  get(key: string): HttpResponse<unknown> | undefined {
+    return this.cache.get(key);
+  }
+
+  save(key: string, value: HttpResponse<unknown>) {
+    this.cache.set(key, value);
   }
 }
