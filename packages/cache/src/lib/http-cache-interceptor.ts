@@ -9,6 +9,8 @@ import {
 
 import { Observable, of, tap } from 'rxjs';
 
+import { CACHE_OPTIONS_TOKEN, CacheOptions } from './cache-options';
+
 @Injectable()
 export class HttpCacheInterceptor implements HttpInterceptor {
   private cache = new Map<string, HttpResponse<unknown>>();
@@ -21,25 +23,36 @@ export class HttpCacheInterceptor implements HttpInterceptor {
       return next.handle(request);
     }
 
-    const cacheResponse = this.get(request.url);
+    const options = request.context.get(CACHE_OPTIONS_TOKEN);
+
+    const cacheResponse = this.get(request.url, options);
     if (cacheResponse) {
       return of(cacheResponse);
     }
 
     return next.handle(request).pipe(
-      tap((event) => {
+      tap((event: HttpEvent<unknown>) => {
         if (event instanceof HttpResponse) {
-          this.save(request.url, event);
+          this.save(request.url, event, options);
         }
       })
     );
   }
 
-  get(key: string): HttpResponse<unknown> | undefined {
-    return this.cache.get(key);
+  get(key: string, options: CacheOptions): HttpResponse<unknown> | undefined {
+    const cacheResponse = this.cache.get(key);
+
+    if (!options.isEnabled && cacheResponse) {
+      this.cache.delete(key);
+      return;
+    }
+
+    return cacheResponse;
   }
 
-  save(key: string, value: HttpResponse<unknown>) {
+  save(key: string, value: HttpResponse<unknown>, options: CacheOptions): void {
+    if (!options.isEnabled) return;
+
     this.cache.set(key, value);
   }
 }
