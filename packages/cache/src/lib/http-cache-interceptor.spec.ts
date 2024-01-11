@@ -2,15 +2,45 @@ import { HttpHandler, HttpRequest, HttpResponse } from '@angular/common/http';
 
 import { of } from 'rxjs';
 
-import {
-  createServiceFactory,
-  HttpMethod,
-  SpectatorService,
-} from '@ngneat/spectator/jest';
+import { createServiceFactory, HttpMethod, SpectatorService } from '@ngneat/spectator/jest';
 
 import { HttpCacheInterceptor } from './http-cache-interceptor';
+import { CACHE_OPTIONS_TOKEN, CacheOptions, withCache } from './cache-options';
 
-import { CacheOptions, withCache } from './cache-options';
+const testData = {
+  iterations: 4,
+  url: '/fake',
+};
+
+const createFakeResponse = () =>
+  new HttpResponse({
+    status: 200,
+    body: 'ok',
+  });
+
+const createFakeGetRequest = (options?: CacheOptions) =>
+  new HttpRequest(HttpMethod.GET, testData.url, {
+    context: options ? withCache(options) : undefined,
+  });
+
+const createFakePostRequest = (options?: CacheOptions) =>
+  new HttpRequest(
+    HttpMethod.POST,
+    testData.url,
+    {},
+    {
+      context: options ? withCache(options) : undefined,
+    }
+  );
+
+const createMockHandler = () =>
+  <HttpHandler>{
+    handle: jest.fn(() => of(createFakeResponse())),
+  };
+
+const getOptions = (request: HttpRequest<unknown>) => request.context.get(CACHE_OPTIONS_TOKEN);
+
+const generateIterations = () => [...Array(testData.iterations).keys()];
 
 describe(HttpCacheInterceptor.name, () => {
   let spectator: SpectatorService<HttpCacheInterceptor>;
@@ -18,102 +48,148 @@ describe(HttpCacheInterceptor.name, () => {
 
   beforeEach(() => (spectator = createService()));
 
-  const createFakeResponse = () =>
-    new HttpResponse<unknown>({ status: 200, body: 'ok' });
-
-  const createFakeGetRequest = (
-    options: CacheOptions = buildOptions()
-  ): HttpRequest<unknown> =>
-    new HttpRequest(HttpMethod.GET, '/fake', {
-      context: withCache(options),
-    });
-
-  const createFakePostRequest = (
-    options: CacheOptions = buildOptions()
-  ): HttpRequest<unknown> =>
-    new HttpRequest(
-      HttpMethod.POST,
-      '/fake',
-      {},
-      {
-        context: withCache(options),
-      }
-    );
-
-  const createMockHandler = () => {
-    return <HttpHandler>{
-      handle: jest.fn(() => of(createFakeResponse())),
-    };
-  };
-
-  const callIntercept = (
-    request: HttpRequest<unknown>,
-    handler: HttpHandler
-  ) => {
+  const callIntercept = (request: HttpRequest<unknown>, handler: HttpHandler) => {
     spectator.service.intercept(request, handler).subscribe();
   };
 
-  const buildOptions = (options?: CacheOptions): CacheOptions => {
-    return {
-      isEnabled: true,
-      ...options,
-    };
-  };
-
   const createSpySave = () => jest.spyOn(spectator.service, 'save');
+  const createSpyDelete = () => jest.spyOn(spectator.service, 'delete');
 
-  describe('call handler', () => {
-    it('should not call handler after initial request', () => {
-      const mockHandler = createMockHandler();
+  describe('defaults', () => {
+    it('should have cache disabled by default', () => {
       const request = createFakeGetRequest();
 
-      callIntercept(request, mockHandler);
-      expect(mockHandler.handle).toHaveBeenCalledTimes(1);
+      callIntercept(request, createMockHandler());
 
-      callIntercept(request, mockHandler);
-      expect(mockHandler.handle).toHaveBeenCalledTimes(1);
+      expect(request.method).toBe(HttpMethod.GET);
+      expect(getOptions(request).isEnabled).toBe(false);
     });
   });
 
-  describe('cache value', () => {
+  describe('http handler', () => {
+    it('should call handler only once if cache is enabled', () => {
+      const mockHandler = createMockHandler();
+      const request = createFakeGetRequest({
+        isEnabled: true,
+      });
+
+      let numberOfRequests = 0;
+
+      generateIterations().forEach(() => {
+        callIntercept(request, mockHandler);
+        numberOfRequests++;
+      });
+
+      expect(request.method).toBe(HttpMethod.GET);
+      expect(numberOfRequests).toBe(testData.iterations);
+      expect(getOptions(request).isEnabled).toBe(true);
+
+      expect(mockHandler.handle).toHaveBeenCalledTimes(1);
+    });
+
+    it('should call handler always if cache is disabled', () => {
+      const mockHandler = createMockHandler();
+      const request = createFakeGetRequest({
+        isEnabled: false,
+      });
+
+      let numberOfRequests = 0;
+
+      generateIterations().forEach(() => {
+        callIntercept(request, mockHandler);
+        numberOfRequests++;
+      });
+
+      expect(request.method).toBe(HttpMethod.GET);
+      expect(numberOfRequests).toBe(testData.iterations);
+      expect(getOptions(request).isEnabled).toBe(false);
+
+      expect(mockHandler.handle).toHaveBeenCalledTimes(testData.iterations);
+    });
+  });
+
+  describe('request method', () => {
     it('should cache value when is get request', () => {
       const spySave = createSpySave();
+      const request = createFakeGetRequest({
+        isEnabled: true,
+      });
 
-      callIntercept(createFakeGetRequest(), createMockHandler());
+      callIntercept(request, createMockHandler());
+
+      expect(request.method).toBe(HttpMethod.GET);
+      expect(getOptions(request).isEnabled).toBe(true);
 
       expect(spySave).toHaveBeenCalled();
-      expect(spectator.service.get('/fake', buildOptions())).toEqual(
-        createFakeResponse()
-      );
+      expect(spectator.service.exists(testData.url)).toBe(true);
     });
 
     it('should not cache value when is not get request', () => {
       const spySave = createSpySave();
+      const request = createFakePostRequest({
+        isEnabled: true,
+      });
 
-      callIntercept(createFakePostRequest(), createMockHandler());
+      callIntercept(request, createMockHandler());
+
+      expect(request.method).not.toBe(HttpMethod.GET);
+      expect(getOptions(request).isEnabled).toBe(true);
 
       expect(spySave).not.toHaveBeenCalled();
-      expect(spectator.service.get('/fake', buildOptions())).toBeUndefined();
+      expect(spectator.service.exists(testData.url)).toBe(false);
     });
   });
 
   describe('is enabled', () => {
-    it('should cache value when enabled', () => {
-      const options = buildOptions({ isEnabled: true });
+    it('should cache value when is enabled', () => {
+      const request = createFakeGetRequest({
+        isEnabled: true,
+      });
 
-      callIntercept(createFakeGetRequest(options), createMockHandler());
+      callIntercept(request, createMockHandler());
 
-      expect(spectator.service.get('/fake', options)).toEqual(
-        createFakeResponse()
-      );
+      expect(request.method).toBe(HttpMethod.GET);
+      expect(getOptions(request).isEnabled).toBe(true);
+
+      expect(spectator.service.exists(testData.url)).toBe(true);
     });
 
-    it('should not cache value when not enabled', () => {
-      const options = buildOptions({ isEnabled: false });
+    it('should not cache value when is disabled', () => {
+      const request = createFakeGetRequest({
+        isEnabled: false,
+      });
 
-      callIntercept(createFakeGetRequest(options), createMockHandler());
+      callIntercept(request, createMockHandler());
 
-      expect(spectator.service.get('/fake', options)).toBeUndefined();
+      expect(request.method).toBe(HttpMethod.GET);
+      expect(getOptions(request).isEnabled).toBe(false);
+
+      expect(spectator.service.exists(testData.url)).toBe(false);
+    });
+
+    it('should delete cached value if enabled is turned off', () => {
+      const mockHandler = createMockHandler();
+      const spyDelete = createSpyDelete();
+
+      const enabledRequest = createFakeGetRequest({
+        isEnabled: true,
+      });
+
+      const disabledRequest = createFakeGetRequest({
+        isEnabled: false,
+      });
+
+      callIntercept(enabledRequest, mockHandler);
+      callIntercept(disabledRequest, mockHandler);
+
+      expect(enabledRequest.method).toBe(HttpMethod.GET);
+      expect(getOptions(enabledRequest).isEnabled).toBe(true);
+
+      expect(disabledRequest.method).toBe(HttpMethod.GET);
+      expect(getOptions(disabledRequest).isEnabled).toBe(false);
+
+      expect(spyDelete).toHaveBeenCalledTimes(1);
+      expect(spectator.service.exists(testData.url)).toBe(false);
     });
   });
 });
