@@ -15,17 +15,15 @@ import { CACHE_OPTIONS_TOKEN, CacheOptions } from './cache-options';
 export class HttpCacheInterceptor implements HttpInterceptor {
   private cache = new Map<string, HttpResponse<unknown>>();
 
-  intercept(
-    request: HttpRequest<unknown>,
-    next: HttpHandler
-  ): Observable<HttpEvent<unknown>> {
+  intercept(request: HttpRequest<unknown>, next: HttpHandler): Observable<HttpEvent<unknown>> {
     if (request.method !== 'GET') {
       return next.handle(request);
     }
 
     const options = request.context.get(CACHE_OPTIONS_TOKEN);
+    const key = options.key ?? request.url;
 
-    const cacheResponse = this.get(request.url, options);
+    const cacheResponse = this.get(key, options);
     if (cacheResponse) {
       return of(cacheResponse);
     }
@@ -33,21 +31,27 @@ export class HttpCacheInterceptor implements HttpInterceptor {
     return next.handle(request).pipe(
       tap((event: HttpEvent<unknown>) => {
         if (event instanceof HttpResponse) {
-          this.save(request.url, event, options);
+          this.save(key, event, options);
         }
       })
     );
   }
 
-  get(key: string, options: CacheOptions): HttpResponse<unknown> | undefined {
-    const cacheResponse = this.cache.get(key);
+  exists(key: string): boolean {
+    return this.cache.has(key);
+  }
 
-    if (!options.isEnabled && cacheResponse) {
-      this.cache.delete(key);
+  delete(key: string): void {
+    this.cache.delete(key);
+  }
+
+  get(key: string, options: CacheOptions): HttpResponse<unknown> | undefined {
+    if (!options.isEnabled && this.exists(key)) {
+      this.delete(key);
       return;
     }
 
-    return cacheResponse;
+    return this.cache.get(key);
   }
 
   save(key: string, value: HttpResponse<unknown>, options: CacheOptions): void {
