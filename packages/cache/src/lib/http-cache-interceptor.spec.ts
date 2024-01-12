@@ -10,6 +10,7 @@ import { CACHE_OPTIONS_TOKEN, CacheOptions, withCache } from './cache-options';
 const testData = {
   iterations: 4,
   url: '/fake',
+  key: 'cache-key',
 };
 
 const createFakeResponse = () =>
@@ -190,6 +191,42 @@ describe(HttpCacheInterceptor.name, () => {
 
       expect(spyDelete).toHaveBeenCalledTimes(1);
       expect(spectator.service.exists(testData.url)).toBe(false);
+    });
+  });
+
+  describe('key', () => {
+    it('should use key if provided', () => {
+      const spySave = createSpySave();
+      const request = createFakeGetRequest({
+        isEnabled: true,
+        key: testData.key,
+      });
+
+      callIntercept(request, createMockHandler());
+
+      expect(request.method).toBe(HttpMethod.GET);
+      expect(getOptions(request).isEnabled).toBe(true);
+      expect(getOptions(request).key).toBe(testData.key);
+
+      expect(spySave).toHaveBeenCalled();
+      expect(spectator.service.exists(testData.key)).toBe(true);
+      expect(spectator.service.exists(testData.url)).toBe(false);
+    });
+
+    it('should use url if key not provided', () => {
+      const spySave = createSpySave();
+      const request = createFakeGetRequest({
+        isEnabled: true,
+      });
+
+      callIntercept(request, createMockHandler());
+
+      expect(request.method).toBe(HttpMethod.GET);
+      expect(getOptions(request).isEnabled).toBe(true);
+      expect(getOptions(request).key).toBeUndefined();
+
+      expect(spySave).toHaveBeenCalled();
+      expect(spectator.service.exists(testData.url)).toBe(true);
     });
   });
 });
