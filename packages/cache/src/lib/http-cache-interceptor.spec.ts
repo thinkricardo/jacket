@@ -7,10 +7,13 @@ import { createServiceFactory, HttpMethod, SpectatorService } from '@ngneat/spec
 import { HttpCacheInterceptor } from './http-cache-interceptor';
 import { CACHE_OPTIONS_TOKEN, CacheOptions, withCache } from './cache-options';
 
+jest.useFakeTimers();
+
 const testData = {
   iterations: 4,
   url: '/fake',
   key: 'cache-key',
+  ttl: 1000,
 };
 
 const createFakeResponse = () =>
@@ -227,6 +230,52 @@ describe(HttpCacheInterceptor.name, () => {
 
       expect(spySave).toHaveBeenCalled();
       expect(spectator.service.exists(testData.url)).toBe(true);
+    });
+  });
+
+  describe('ttl', () => {
+    it('should remove cache when expired and execute request', () => {
+      const mockHandler = createMockHandler();
+      const spyDelete = createSpyDelete();
+
+      const request = createFakeGetRequest({
+        isEnabled: true,
+        ttl: testData.ttl,
+      });
+
+      callIntercept(request, mockHandler);
+
+      jest.advanceTimersByTime(testData.ttl + 1);
+
+      callIntercept(request, mockHandler);
+
+      expect(request.method).toBe(HttpMethod.GET);
+      expect(getOptions(request).isEnabled).toBe(true);
+      expect(getOptions(request).ttl).toBe(testData.ttl);
+
+      expect(spyDelete).toHaveBeenCalled();
+      expect(mockHandler.handle).toHaveBeenCalledTimes(2);
+    });
+
+    it('should retrieve value from cache when not expired and not execute request', () => {
+      const mockHandler = createMockHandler();
+
+      const request = createFakeGetRequest({
+        isEnabled: true,
+        ttl: testData.ttl,
+      });
+
+      callIntercept(request, mockHandler);
+
+      jest.advanceTimersByTime(testData.ttl - 1);
+
+      callIntercept(request, mockHandler);
+
+      expect(request.method).toBe(HttpMethod.GET);
+      expect(getOptions(request).isEnabled).toBe(true);
+      expect(getOptions(request).ttl).toBe(testData.ttl);
+
+      expect(mockHandler.handle).toHaveBeenCalledTimes(1);
     });
   });
 });
