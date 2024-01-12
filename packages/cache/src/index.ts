@@ -1,1 +1,3 @@
-export * from './lib/cache/cache.component';
+export { HttpCacheInterceptor } from './lib/http-cache-interceptor';
+
+export { withCache } from './lib/cache-options';
