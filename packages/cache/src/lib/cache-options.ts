@@ -3,6 +3,7 @@ import { HttpContext, HttpContextToken } from '@angular/common/http';
 export interface CacheOptions {
   isEnabled: boolean;
   key?: string;
+  ttl?: number;
 }
 
 const defaultOptions: CacheOptions = {
